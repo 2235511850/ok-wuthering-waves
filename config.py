@@ -150,7 +150,7 @@ monthly_card_config_option = ConfigOption('Monthly Card Config', {
 })
 
 config = {
-    'debug': False,  # Optional, default: False
+    'debug': True,  # Optional, default: False
     'custom_tasks': True,
     "gui": {
         "type": "qt",
@@ -260,6 +260,7 @@ config = {
         ["src.task.MultiAccountDailyTask", "MultiAccountDailyTask"],
         ["src.task.MergeEchoTask", "MergeEchoTask"],
         ["src.task.EnhanceEchoTask", "EnhanceEchoTask"],
+        ["src.task.EnhanceEchoV2Task", "EnhanceEchoV2Task"],
         ["src.task.ChangeEchoTask", "ChangeEchoTask"],
         ["src.task.GardenTask", "GardenTask"],
         # ["src.task.DiagnosisTask", "DiagnosisTask"],
