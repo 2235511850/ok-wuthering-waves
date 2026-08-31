@@ -4,7 +4,7 @@
 # 改进点：
 #   1. 分批评估（三种模式：保守/标准/激进）
 #   2. 自定义材料放入（金色密音筒批量添加）
-#   3. 加权评分制替代原版硬规则闸门
+#   3. 二值评分制：有效词条得 value/满值，无效得0，有效来源绑定"有效词条"配置
 # ============================================================
 import re
 import time
@@ -15,24 +15,6 @@ from ok.feature.Box import get_bounding_box
 from ok.util.file import clear_folder
 from src.scene.WWScene import WWScene
 from src.task.BaseWWTask import BaseWWTask
-from src.weight_presets import get_preset_names, get_weights
-
-def _get_preset_options():
-    """获取预设方案名列表，用于下拉选项"""
-    try:
-        names = get_preset_names()
-        return names if names else ['共解C']
-    except Exception:
-        return ['共解C']
-
-
-def _get_preset_weights(name):
-    """获取指定方案的权重字典"""
-    try:
-        w = get_weights(name)
-        return w if w else {}
-    except Exception:
-        return {}
 
 logger = Logger.get_logger(__name__)
 
@@ -98,21 +80,20 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
             '必须暴击': True,
             '必须暴击伤害': True,
 
-            # --- 评分系统（归一化评分：满分=权重最高的5条满值词条得分之和，共解C满分≈5.3） ---
+            # --- 评分系统（二值评分：有效词条得 value/max_value，无效得0） ---
             '启用评分': True,
-            '15级评分阈值': 2.1,
-            '20级评分阈值': 2.9,
-            '25级评分阈值': 3.7,
+            '15级评分阈值': 0.0,
+            '20级评分阈值': 1.5,
+            '25级评分阈值': 2.5,
 
             # --- 有效词条系统 ---
             '启用有效词条检查': True,
-            '有效词条': ['暴击', '暴击伤害', '攻击百分比'],
+            '有效词条': [],
             '15级有效词条数': 1,
             '20级有效词条数': 2,
             '25级有效词条数': 3,
 
             # --- 其他 ---
-            '评分权重方案': '共解C',
             'Pause after Success': True,
         })
 
@@ -120,13 +101,9 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
         self.config_type['筛选模式'] = {
             'options': ['保守', '标准', '激进'],
         }
-        # 评分权重方案：下拉单选（动态读取预设列表）
-        self.config_type['评分权重方案'] = {
-            'options': _get_preset_options(),
-        }
         # 启用评分: 开关控制评分阈值显隐
         self.config_type['启用评分'] = {
-            'sub_configs': {True: ['15级评分阈值', '20级评分阈值', '25级评分阈值', '评分权重方案']}
+            'sub_configs': {True: ['15级评分阈值', '20级评分阈值', '25级评分阈值']}
         }
         # 启用有效词条检查: 开关控制有效词条相关项显隐
         self.config_type['启用有效词条检查'] = {
@@ -139,19 +116,18 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
 
         self.config_description = {
             '筛选模式': '保守=0→15→20→25三级止损（最省材料）; 标准=0→20→25两级止损; 激进=0→25快速放入一步到位（最费材料）',
-            '必须暴击': '开启后声骅最终必须拥有暴击词条，剩余孔位不足以凑齐则提前弃置',
-            '必须暴击伤害': '开启后声骅最终必须拥有暴击伤害词条，剩余孔位不足以凑齐则提前弃置',
+            '必须暴击': '开启后声骸最终必须拥有暴击词条，剩余孔位不足以凑齐则提前弃置',
+            '必须暴击伤害': '开启后声骸最终必须拥有暴击伤害词条，剩余孔位不足以凑齐则提前弃置',
             '启用评分': '开启后按评分阈值筛选，关闭则只看有效词条',
-            '15级评分阈值': '15级（3条词条）时归一化评分下限（满分≈理论满分×词条比，共解C满分5.3），低于此值弃置',
-            '20级评分阈值': '20级（4条词条）时归一化评分下限',
-            '25级评分阈值': '25级（5条满级）时最终归一化评分下限',
+            '15级评分阈值': '15级（3条词条）时二值评分下限，有效词条得 value/满值，无效得0，满分=有效词条数',
+            '20级评分阈值': '20级（4条词条）时二值评分下限',
+            '25级评分阈值': '25级（5条满级）时最终二值评分下限',
             '启用有效词条检查': '开启后按有效词条数量筛选，关闭则只看评分',
-            '有效词条': '选择哪些副词条算作有效词条，用于有效词条数判定',
+            '有效词条': '选择哪些副词条算作有效词条，有效词条在评分中得 value/满值，无效得0',
             '15级有效词条数': '15级时至少需要几条有效词条，不足则弃置',
             '20级有效词条数': '20级时至少需要几条有效词条',
             '25级有效词条数': '25级时至少需要几条有效词条',
             'Pause after Success': '成功时发送通知并暂停任务',
-            '评分权重方案': '选择评分权重预设方案（在左侧导航栏「评分权重预设」模块中管理方案）',
         }
 
     # ============================================================
@@ -463,8 +439,9 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
         return paired
 
     def _compute_score(self, paired_stats):
-        """计算归一化评分: score = Σ(weight × value / max_value)
-        权重直接等于1条满值词条的得分，阈值含义清晰
+        """二值评分: 有效词条得 value/max_value，无效词条得 0
+        有效词条来源: self.config.get('有效词条')
+        小攻击/小生命/小防御折算为对应百分比后匹配有效词条列表
 
         返回: (score, has_crit_rate, has_crit_dmg, total_count)
         """
@@ -473,11 +450,7 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
         score = 0.0
         detail = []  # 仅用于日志
 
-        # 从预设方案读取权重
-        preset_name = self.config.get('评分权重方案', '共解C')
-        weights = _get_preset_weights(preset_name)
-        if not weights:
-            self.log_info(f'方案[{preset_name}]无权重数据, 使用空权重')
+        valid_stats = self.config.get('有效词条', [])
 
         for p_raw, v_str in paired_stats:
             pname, value = self._normalize_stat(p_raw, v_str)
@@ -487,7 +460,7 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
             elif pname == '暴击伤害':
                 has_crit_dmg = True
 
-            # 小攻击/小生命 固定值词条: 折算为等效百分比后使用对应百分比权重
+            # 小攻击/小生命/小防御固定值词条: 折算为等效百分比
             if pname == '攻击':
                 value = value * 0.5 / STAT_RANGES['攻击'][1] * STAT_RANGES['攻击百分比'][1]
                 pname = '攻击百分比'
@@ -498,43 +471,19 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
                 value = value * 0.5 / STAT_RANGES['防御'][1] * STAT_RANGES['防御百分比'][1]
                 pname = '防御百分比'
 
-            weight = weights.get(pname, 0) or 0
-            # 归一化: 满值词条得分 = weight, 半值词条得分 = weight × 0.5
             max_val = STAT_RANGES.get(pname, (0, 1))[1]
-            if weight > 0 and max_val > 0:
+            is_valid = pname in valid_stats
+
+            if is_valid and max_val > 0:
                 norm_value = value / max_val
-                line_score = weight * norm_value
-                score += line_score
-                detail.append(f'{pname}={value:.1f}/{max_val}={norm_value:.2f}×{weight}={line_score:.2f}')
-            elif weight > 0:
-                detail.append(f'{pname}={value:.1f}[满值未知,跳过]')
+                score += norm_value
+                detail.append(f'{pname}={value:.1f}/{max_val}={norm_value:.2f}✓')
+            elif is_valid:
+                detail.append(f'{pname}={value:.1f}[满值未知,跳过]✓')
             else:
-                detail.append(f'{pname}={value:.1f}[权重0,跳过]')
+                detail.append(f'{pname}={value:.1f}✗')
 
-        # # ===== 旧版细化评分（原始值 × 权重，已废弃） =====
-        # for p_raw, v_str in paired_stats:
-        #     pname, value = self._normalize_stat(p_raw, v_str)
-        #     if pname == '暴击': has_crit_rate = True
-        #     elif pname == '暴击伤害': has_crit_dmg = True
-        #     if pname == '攻击':
-        #         value = value * 0.5 / STAT_RANGES['攻击'][1] * STAT_RANGES['攻击百分比'][1]
-        #         pname = '攻击百分比'
-        #     elif pname == '生命':
-        #         value = value * 0.33 / STAT_RANGES['生命'][1] * STAT_RANGES['生命百分比'][1]
-        #         pname = '生命百分比'
-        #     elif pname == '防御':
-        #         value = value * 0.5 / STAT_RANGES['防御'][1] * STAT_RANGES['防御百分比'][1]
-        #         pname = '防御百分比'
-        #     weight = weights.get(pname, 0) or 0
-        #     if weight > 0:
-        #         line_score = weight * value
-        #         score += line_score
-        #         detail.append(f'{pname}={value:.1f}×{weight}={line_score:.1f}')
-        #     else:
-        #         detail.append(f'{pname}={value:.1f}[权重0,跳过]')
-        # # ===== 旧版结束 =====
-
-        self.log_info(f'方案[{preset_name}] 词条明细: {" | ".join(detail)}')
+        self.log_info(f'有效词条{valid_stats} | 词条明细: {" | ".join(detail)}')
         return score, has_crit_rate, has_crit_dmg, len(paired_stats)
 
     def evaluate_stage(self, threshold, stage_label):
@@ -573,12 +522,16 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
                 self.trash_and_esc()
                 return False
 
-        # 5. 有效词条检查
+        # 5. 有效词条检查（折算后匹配，与 _compute_score 逻辑对齐）
         valid_stats = self.config.get('有效词条', [])
         valid_count = 0
         valid_names = []
         for p_raw, v_str in paired:
             pname, _ = self._normalize_stat(p_raw, v_str)
+            # 小攻击/小生命/小防御折算为对应百分比后匹配
+            if pname == '攻击': pname = '攻击百分比'
+            elif pname == '生命': pname = '生命百分比'
+            elif pname == '防御': pname = '防御百分比'
             if pname in valid_stats:
                 valid_count += 1
                 valid_names.append(pname)
