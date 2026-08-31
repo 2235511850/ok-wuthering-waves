@@ -25,6 +25,7 @@ screenshots/
 thread_dumps.txt
 .claude/
 CLAUDE.md
+.temp/
 # C extensions
 ok
 ok/
