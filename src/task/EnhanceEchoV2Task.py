@@ -15,6 +15,24 @@ from ok.feature.Box import get_bounding_box
 from ok.util.file import clear_folder
 from src.scene.WWScene import WWScene
 from src.task.BaseWWTask import BaseWWTask
+from src.weight_presets import get_preset_names, get_weights
+
+def _get_preset_options():
+    """获取预设方案名列表，用于下拉选项"""
+    try:
+        names = get_preset_names()
+        return names if names else ['共解C']
+    except Exception:
+        return ['共解C']
+
+
+def _get_preset_weights(name):
+    """获取指定方案的权重字典"""
+    try:
+        w = get_weights(name)
+        return w if w else {}
+    except Exception:
+        return {}
 
 logger = Logger.get_logger(__name__)
 
@@ -47,16 +65,14 @@ ALL_STAT_NAMES = list(STAT_RANGES.keys())
 class EnhanceEchoV2Task(BaseWWTask, FindFeature):
 
     # ============================================================
-    # UI 坐标占位符（B阶段需截图后替换为真实值）
+    # UI 坐标（基于 1920x1080 截图校准）
     # 格式: (x1, y1, x2, y2) 屏幕归一化坐标 0-1
     # ============================================================
     UI_COORDS = {
-        '加号按钮':       (0.14, 0.64, 0.21, 0.71),
-        '金色密音筒':     (0.35, 0.34, 0.44, 0.44),
-        '弹窗返回':       (0.87, 0.12, 0.94, 0.18),
-        '设置按钮':       (0.04, 0.55, 0.11, 0.62),
-        '阶段放入选项':   (0.08, 0.57, 0.24, 0.64),
-        '快速放入选项':   (0.08, 0.65, 0.24, 0.72),
+        '加号按钮':       (0.125, 0.711, 0.149, 0.776),   # 左侧材料槽第一个+（模板拾取 239,768,47x70）
+        '金色密音筒':     (0.538, 0.075, 0.606, 0.187),   # 右侧列表第一行第一个金色材料（模板拾取 1033,81,130x121）
+        '设置按钮':       (0.322, 0.627, 0.344, 0.668),   # 齿轮设置按钮（模板功能拾取 618,677,42x44）
+        '确认按钮':       (0.731, 0.819, 0.866, 0.858),   # 设置弹窗确认按钮（模板拾取 1404,884,260x42）
     }
 
     def __init__(self, *args, **kwargs):
@@ -65,6 +81,11 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
         self.description = "点击B进入背包, 在过滤器中选择需要强化的声骸, 并按照等级从0排序后开始."
         self.fail_reason = ""
         self.supported_languages = ["zh_CN", "zh_TW"]
+
+        # 激进模式: 快捷放入设置只需执行一次（设置会持久化）
+        self._quick_add_configured = False
+        # 保守/标准模式: 阶段放入设置只需执行一次（设置会持久化）
+        self._stage_add_configured = False
 
         # ============================================================
         # A3 GUI 配置项
@@ -77,62 +98,60 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
             '必须暴击': True,
             '必须暴击伤害': True,
 
-            # --- 各阶段评分阈值 ---
-            '保守-15级评分阈值': 10.0,
-            '保守-20级评分阈值': 20.0,
-            '保守-25级评分阈值': 30.0,
-            '标准-20级评分阈值': 20.0,
-            '标准-25级评分阈值': 30.0,
-            '激进-25级评分阈值': 30.0,
+            # --- 评分系统（归一化评分：满分=权重最高的5条满值词条得分之和，共解C满分≈5.3） ---
+            '启用评分': True,
+            '15级评分阈值': 2.1,
+            '20级评分阈值': 2.9,
+            '25级评分阈值': 3.7,
 
-            # --- 各词条权重（0-2.0，0=无效词条） ---
-            '权重_暴击':             1.8,
-            '权重_暴击伤害':         0.9,
-            '权重_攻击百分比':       1.0,
-            '权重_生命百分比':       0.5,
-            '权重_防御百分比':       0.4,
-            '权重_共鸣效率':         0.5,
-            '权重_共鸣技能伤害加成': 1.0,
-            '权重_共鸣解放伤害加成': 1.0,
-            '权重_普攻伤害加成':     1.0,
-            '权重_重击伤害加成':     1.0,
-            '权重_攻击':             0.1,
-            '权重_生命':             0.01,
-            '权重_防御':             0.01,
+            # --- 有效词条系统 ---
+            '启用有效词条检查': True,
+            '有效词条': ['暴击', '暴击伤害', '攻击百分比'],
+            '15级有效词条数': 1,
+            '20级有效词条数': 2,
+            '25级有效词条数': 3,
 
             # --- 其他 ---
+            '评分权重方案': '共解C',
             'Pause after Success': True,
         })
 
-        # 筛选模式：下拉单选（框架自动推断：有 options + 默认值是 str → drop_down）
+        # 筛选模式：下拉单选
         self.config_type['筛选模式'] = {
             'options': ['保守', '标准', '激进'],
+        }
+        # 评分权重方案：下拉单选（动态读取预设列表）
+        self.config_type['评分权重方案'] = {
+            'options': _get_preset_options(),
+        }
+        # 启用评分: 开关控制评分阈值显隐
+        self.config_type['启用评分'] = {
+            'sub_configs': {True: ['15级评分阈值', '20级评分阈值', '25级评分阈值', '评分权重方案']}
+        }
+        # 启用有效词条检查: 开关控制有效词条相关项显隐
+        self.config_type['启用有效词条检查'] = {
+            'sub_configs': {True: ['有效词条', '15级有效词条数', '20级有效词条数', '25级有效词条数']}
+        }
+        # 有效词条：多选
+        self.config_type['有效词条'] = {
+            'options': ALL_STAT_NAMES,
         }
 
         self.config_description = {
             '筛选模式': '保守=0→15→20→25三级止损（最省材料）; 标准=0→20→25两级止损; 激进=0→25快速放入一步到位（最费材料）',
-            '必须暴击': '开启后声骸最终必须拥有暴击词条，剩余孔位不足以凑齐则提前弃置',
-            '必须暴击伤害': '开启后声骸最终必须拥有暴击伤害词条，剩余孔位不足以凑齐则提前弃置',
-            '保守-15级评分阈值': '保守模式15级（3条词条）时的评分下限，低于此值弃置',
-            '保守-20级评分阈值': '保守模式20级（4条词条）时的评分下限',
-            '保守-25级评分阈值': '保守模式25级（5条满级）时的最终评分下限',
-            '标准-20级评分阈值': '标准模式20级（4条词条）时的评分下限',
-            '标准-25级评分阈值': '标准模式25级满级时的最终评分下限',
-            '激进-25级评分阈值': '激进模式25级满级时的最终评分下限',
-            '权重_暴击': '暴击率词条权重，0=无效，建议1.8',
-            '权重_暴击伤害': '暴击伤害词条权重，建议0.9',
-            '权重_攻击百分比': '攻击百分比词条权重，建议1.0',
-            '权重_生命百分比': '生命百分比词条权重，奶/肉角色建议0.5+',
-            '权重_防御百分比': '防御百分比词条权重，防御角色建议0.4+',
-            '权重_共鸣效率': '共鸣效率词条权重，辅助建议0.5+',
-            '权重_共鸣技能伤害加成': '共鸣技能伤害加成词条权重',
-            '权重_共鸣解放伤害加成': '共鸣解放伤害加成词条权重',
-            '权重_普攻伤害加成': '普攻伤害加成词条权重',
-            '权重_重击伤害加成': '重击伤害加成词条权重',
-            '权重_攻击': '固定攻击（小攻击）词条权重，数值30-60',
-            '权重_生命': '固定生命词条权重，数值320-580',
-            '权重_防御': '固定防御词条权重，数值40-70',
+            '必须暴击': '开启后声骅最终必须拥有暴击词条，剩余孔位不足以凑齐则提前弃置',
+            '必须暴击伤害': '开启后声骅最终必须拥有暴击伤害词条，剩余孔位不足以凑齐则提前弃置',
+            '启用评分': '开启后按评分阈值筛选，关闭则只看有效词条',
+            '15级评分阈值': '15级（3条词条）时归一化评分下限（满分≈理论满分×词条比，共解C满分5.3），低于此值弃置',
+            '20级评分阈值': '20级（4条词条）时归一化评分下限',
+            '25级评分阈值': '25级（5条满级）时最终归一化评分下限',
+            '启用有效词条检查': '开启后按有效词条数量筛选，关闭则只看评分',
+            '有效词条': '选择哪些副词条算作有效词条，用于有效词条数判定',
+            '15级有效词条数': '15级时至少需要几条有效词条，不足则弃置',
+            '20级有效词条数': '20级时至少需要几条有效词条',
+            '25级有效词条数': '25级时至少需要几条有效词条',
             'Pause after Success': '成功时发送通知并暂停任务',
+            '评分权重方案': '选择评分权重预设方案（在左侧导航栏「评分权重预设」模块中管理方案）',
         }
 
     # ============================================================
@@ -171,6 +190,14 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
                 if not enhance:
                     break
 
+            # --- 等待强化界面加载完毕 ---
+            self.log_info('等待强化界面加载...')
+            if not self.wait_ocr(0.10, 0.55, 0.35, 0.70,
+                                 match=['快捷放入', '阶段放入', re.compile('强化消耗材料')],
+                                 settle_time=0.5, time_out=10):
+                raise Exception('强化界面加载超时, 找不到快捷放入/阶段放入/强化消耗材料!')
+            self.log_info('强化界面已加载')
+
             # --- 按筛选模式执行强化流程 ---
             mode = self.config.get('筛选模式')
             self.log_info(f'开始强化, 筛选模式: {mode}')
@@ -189,62 +216,79 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
     # ============================================================
     def _flow_conservative(self):
         """保守模式: 0→15评 → 阶段放入升20评 → 阶段放入升25评"""
+        # 首次进入: 配置阶段放入方式（只执行一次）
+        self.ensure_stage_add_configured()
         # 阶段1: 自定义放8个金色密音筒 → 升15
         self.add_custom_materials(8)
-        r = self.evaluate_stage(self.config.get('保守-15级评分阈值'), '15级')
+        r = self.evaluate_stage(self.config.get('15级评分阈值'), '15级')
         if r is not True:
             return  # False=已弃置, None=已上锁(不会在15级发生)
 
         # 阶段2: 阶段放入 → 升20
         self.stage_add_materials()
-        r = self.evaluate_stage(self.config.get('保守-20级评分阈值'), '20级')
+        r = self.evaluate_stage(self.config.get('20级评分阈值'), '20级')
         if r is not True:
             return
 
         # 阶段3: 阶段放入 → 升25
         self.stage_add_materials()
-        self.evaluate_stage(self.config.get('保守-25级评分阈值'), '25级')
+        self.evaluate_stage(self.config.get('25级评分阈值'), '25级')
 
     def _flow_standard(self):
         """标准模式: 0→20评 → 阶段放入升25评"""
+        # 首次进入: 阶段放入方式只配置一次
+        self.ensure_stage_add_configured()
         # 阶段1: 自定义放16个金色密音筒 → 升20
         self.add_custom_materials(16)
-        r = self.evaluate_stage(self.config.get('标准-20级评分阈值'), '20级')
+        r = self.evaluate_stage(self.config.get('20级评分阈值'), '20级')
         if r is not True:
             return
 
         # 阶段2: 阶段放入 → 升25
         self.stage_add_materials()
-        self.evaluate_stage(self.config.get('标准-25级评分阈值'), '25级')
+        self.evaluate_stage(self.config.get('25级评分阈值'), '25级')
 
     def _flow_aggressive(self):
         """激进模式: 快速放入 → 直升25 → 评"""
         self.quick_add_materials()
-        self.evaluate_stage(self.config.get('激进-25级评分阈值'), '25级')
+        self.evaluate_stage(self.config.get('25级评分阈值'), '25级')
 
     # ============================================================
-    # 材料放入方法（坐标为占位符，B阶段需截图定位）
+    # 材料放入方法（坐标基于 1920x1080 截图校准）
     # ============================================================
     def _click_placeholder(self, name, after_sleep=0.3):
-        """点击占位坐标UI元素"""
+        """点击校准坐标对应的UI元素"""
         x1, y1, x2, y2 = self.UI_COORDS[name]
         box = self.box_of_screen(x1, y1, x2, y2)
+        # 调试: 打印归一化坐标和像素坐标
+        cx = (x1 + x2) / 2
+        cy = (y1 + y2) / 2
+        px = int(cx * 1920)
+        py = int(cy * 1080)
+        self.log_info(f'点击 [{name}] 归一化=({x1:.3f},{y1:.3f},{x2:.3f},{y2:.3f}) '
+                      f'中心=({cx:.3f},{cy:.3f}) 像素=({px},{py}) '
+                      f'box=({box.x},{box.y},{box.width},{box.height})')
+        self.screenshot(f'click_{name}')
         self.click(box, after_sleep=after_sleep)
-        self.log_info(f'点击 [{name}] (占位坐标, 待B阶段校准)')
 
     def add_custom_materials(self, count):
-        """自定义添加材料: 点加号 → 弹窗选金色密音筒×count → 返回
+        """自定义添加材料: 点加号 → 右侧材料列表选金色密音筒×count → ESC返回
 
-        ⚠️ 坐标为占位符，B阶段需截图定位
+        基于截图校准: 点+号后右侧材料列表显示，第一行第一个是金色经验材料
+        注意: 点加号后必须等弹窗加载完成再开始点材料, 否则点击落空少次数
         """
         self.log_info(f'自定义添加金色密音筒 ×{count}')
-        # 点加号打开弹窗
+        # 点加号打开材料选择
         self._click_placeholder('加号按钮', after_sleep=0.5)
-        # 在弹窗中选金色密音筒
+        # 等材料列表弹窗加载完成（避免点太快落空）
+        self.log_info('等待材料列表加载...')
+        self.sleep(1.0)
+        # 在右侧材料列表中选金色密音筒
         for i in range(count):
-            self._click_placeholder('金色密音筒', after_sleep=0.15)
-        # 返回上一页面
-        self._click_placeholder('弹窗返回', after_sleep=0.5)
+            self._click_placeholder('金色密音筒', after_sleep=0.3)
+        # 按 ESC 返回强化界面
+        self.send_key('esc', after_sleep=0.5)
+        self.log_info('已返回强化界面')
 
     def stage_add_materials(self):
         """阶段放入材料（衔接阶段 15→20, 20→25）
@@ -267,38 +311,75 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
             raise Exception('无法找到阶段放入按钮, 检查强化设置!')
         self.log_info('阶段放入完成')
 
+    def ensure_stage_add_configured(self):
+        """确保阶段放入设置已初始化（只执行一次，设置会持久化）
+
+        首次调用: 点齿轮设置 → 弹窗 OCR选"阶段放入" → OCR点"确认"
+        后续调用: 设置已持久化, 直接跳过
+        """
+        if not self._stage_add_configured:
+            self.log_info('首次执行, 配置阶段放入设置...')
+            self._configure_add_mode('阶段放入')
+            self._stage_add_configured = True
+        else:
+            self.log_info('阶段放入已配置, 跳过设置步骤')
+
+    def _configure_add_mode(self, add_mode):
+        """打开设置弹窗, 选择放入方式并确认（一次性设置）"""
+        self._click_placeholder('设置按钮', after_sleep=0.5)
+        # OCR 选择放入方式: 弹窗内选项并排, 快捷放入在左, 阶段放入在右（模板拾取）
+        add_mode_area = {
+            '快捷放入': (0.123, 0.253, 0.493, 0.404),   # 模板拾取 237,273,710x164
+            '阶段放入': (0.515, 0.256, 0.883, 0.402),   # 模板拾取 989,276,706x158
+        }.get(add_mode, (0.123, 0.253, 0.883, 0.402))   # 兜底: 全宽搜索
+        if not self.wait_click_ocr(*add_mode_area, match=[add_mode],
+                                   settle_time=0.1, after_sleep=0.3):
+            self.log_error(f'设置弹窗中找不到[{add_mode}]选项!')
+            raise Exception(f'设置弹窗中找不到[{add_mode}]选项!')
+        self.log_info(f'选择[{add_mode}]模式')
+        # OCR 点击确认按钮（模板拾取 1404,884,260x42）
+        if not self.wait_click_ocr(0.70, 0.80, 0.90, 0.88, match=['确认'],
+                                   settle_time=0.1, after_sleep=0.5):
+            self.log_info('OCR找不到确认按钮, 尝试硬坐标兜底')
+            self._click_placeholder('确认按钮', after_sleep=0.5)
+        self.log_info('确认设置')
+
     def quick_add_materials(self):
         """快速放入材料（激进模式: 0→25一步到位）
 
-        ⚠️ 坐标为占位符，B阶段需截图定位
-        流程: 设置选"快速放入" → 点"一键放入"
+        首次调用: 配置快捷放入设置（只执行一次） → 点击"快捷放入"按钮
+        后续调用: 设置已持久化, 直接点"快捷放入"按钮
         """
         self.log_info('快速放入材料(0→25)...')
-        # 设置选快速放入
-        self._click_placeholder('设置按钮', after_sleep=0.3)
-        self._click_placeholder('快速放入选项', after_sleep=0.3)
-        # 点一键放入
-        self.find_and_click_one_click_add()
+        if not self._quick_add_configured:
+            # 首次: 打开设置弹窗配置快捷放入
+            self.log_info('首次执行, 配置快捷放入设置...')
+            self._configure_add_mode('快捷放入')
+            self._quick_add_configured = True
+        else:
+            self.log_info('快捷放入已配置, 跳过设置步骤')
+        # 通用: 点击快捷放入按钮（首次配置后 / 后续直接点）
+        self.find_and_click_quick_add()
 
-    def find_and_click_one_click_add(self):
-        """查找并点击"一键放入"按钮
+    def find_and_click_quick_add(self):
+        """查找并点击"快捷放入"按钮
 
-        ⚠️ 暂用 OCR 搜索，坐标区域为占位值，B阶段需校准
+        OCR 搜索左下区域，匹配"快捷放入"文字
         """
-        if not self.wait_click_ocr(0.25, 0.85, 0.50, 0.95, match=['一键放入'],
+        if not self.wait_click_ocr(0.240, 0.632, 0.308, 0.665, match=['快捷放入'],
                                    settle_time=0.1, after_sleep=0.5):
-            self.log_error('找不到一键放入按钮!')
-            raise Exception('找不到一键放入按钮!')
-        self.log_info('点击一键放入')
+            self.log_error('找不到快捷放入按钮!')
+            raise Exception('找不到快捷放入按钮!')
+        self.log_info('点击快捷放入')
 
     # ============================================================
     # 强化+调谐 + OCR 读取（从原版提取复用）
     # ============================================================
     def enhance_and_tune(self):
         """点击强化并调谐, 处理调谐弹窗"""
-        if not self.wait_click_ocr(0.1, 0.88, 0.29, 0.96, match=['强化并调谐'],
+        if not self.wait_click_ocr(0.122, 0.891, 0.329, 0.941, match=['强化并调谐'],
                                    settle_time=0.1, after_sleep=1.5):
-            if self.ocr(0.17, 0.88, 0.29, 0.96, match=['强化']):
+            if self.ocr(0.122, 0.891, 0.329, 0.941, match=['强化']):
                 raise Exception('强化设置需要开启同步调谐!')
             else:
                 raise Exception('找不到 强化并调谐!')
@@ -382,13 +463,21 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
         return paired
 
     def _compute_score(self, paired_stats):
-        """计算加权评分
+        """计算归一化评分: score = Σ(weight × value / max_value)
+        权重直接等于1条满值词条的得分，阈值含义清晰
+
         返回: (score, has_crit_rate, has_crit_dmg, total_count)
         """
         has_crit_rate = False
         has_crit_dmg = False
         score = 0.0
         detail = []  # 仅用于日志
+
+        # 从预设方案读取权重
+        preset_name = self.config.get('评分权重方案', '共解C')
+        weights = _get_preset_weights(preset_name)
+        if not weights:
+            self.log_info(f'方案[{preset_name}]无权重数据, 使用空权重')
 
         for p_raw, v_str in paired_stats:
             pname, value = self._normalize_stat(p_raw, v_str)
@@ -398,19 +487,58 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
             elif pname == '暴击伤害':
                 has_crit_dmg = True
 
-            weight = self.config.get(f'权重_{pname}', 0) or 0
-            if weight > 0:
-                line_score = weight * value
-                score += line_score
-                detail.append(f'{pname}={value}×{weight}={line_score:.1f}')
-            else:
-                detail.append(f'{pname}={value}[权重0,跳过]')
+            # 小攻击/小生命 固定值词条: 折算为等效百分比后使用对应百分比权重
+            if pname == '攻击':
+                value = value * 0.5 / STAT_RANGES['攻击'][1] * STAT_RANGES['攻击百分比'][1]
+                pname = '攻击百分比'
+            elif pname == '生命':
+                value = value * 0.33 / STAT_RANGES['生命'][1] * STAT_RANGES['生命百分比'][1]
+                pname = '生命百分比'
+            elif pname == '防御':
+                value = value * 0.5 / STAT_RANGES['防御'][1] * STAT_RANGES['防御百分比'][1]
+                pname = '防御百分比'
 
-        self.log_info(f'词条明细: {" | ".join(detail)}')
+            weight = weights.get(pname, 0) or 0
+            # 归一化: 满值词条得分 = weight, 半值词条得分 = weight × 0.5
+            max_val = STAT_RANGES.get(pname, (0, 1))[1]
+            if weight > 0 and max_val > 0:
+                norm_value = value / max_val
+                line_score = weight * norm_value
+                score += line_score
+                detail.append(f'{pname}={value:.1f}/{max_val}={norm_value:.2f}×{weight}={line_score:.2f}')
+            elif weight > 0:
+                detail.append(f'{pname}={value:.1f}[满值未知,跳过]')
+            else:
+                detail.append(f'{pname}={value:.1f}[权重0,跳过]')
+
+        # # ===== 旧版细化评分（原始值 × 权重，已废弃） =====
+        # for p_raw, v_str in paired_stats:
+        #     pname, value = self._normalize_stat(p_raw, v_str)
+        #     if pname == '暴击': has_crit_rate = True
+        #     elif pname == '暴击伤害': has_crit_dmg = True
+        #     if pname == '攻击':
+        #         value = value * 0.5 / STAT_RANGES['攻击'][1] * STAT_RANGES['攻击百分比'][1]
+        #         pname = '攻击百分比'
+        #     elif pname == '生命':
+        #         value = value * 0.33 / STAT_RANGES['生命'][1] * STAT_RANGES['生命百分比'][1]
+        #         pname = '生命百分比'
+        #     elif pname == '防御':
+        #         value = value * 0.5 / STAT_RANGES['防御'][1] * STAT_RANGES['防御百分比'][1]
+        #         pname = '防御百分比'
+        #     weight = weights.get(pname, 0) or 0
+        #     if weight > 0:
+        #         line_score = weight * value
+        #         score += line_score
+        #         detail.append(f'{pname}={value:.1f}×{weight}={line_score:.1f}')
+        #     else:
+        #         detail.append(f'{pname}={value:.1f}[权重0,跳过]')
+        # # ===== 旧版结束 =====
+
+        self.log_info(f'方案[{preset_name}] 词条明细: {" | ".join(detail)}')
         return score, has_crit_rate, has_crit_dmg, len(paired_stats)
 
     def evaluate_stage(self, threshold, stage_label):
-        """评分判定一个阶段: 强化+调谐 → OCR → 评分 → 判定
+        """评分判定一个阶段: 强化+调谐 → OCR → 有效词条检查 → 评分 → 判定
 
         返回: True=通过继续, False=不通过已弃置, None=满级已上锁
         """
@@ -431,8 +559,6 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
 
         self.info_set('当前评分', round(score, 1))
         self.info_set('词条数', total_count)
-        self.log_info(f'[{stage_label}] 评分={score:.1f} 阈值={threshold} | '
-                      f'暴击={has_crit_rate} 爆伤={has_crit_dmg} | {total_count}条')
 
         # 4. 硬性底线检查: 剩余孔位能否凑齐必须的暴击/暴击伤害
         must_crit = self.config.get('必须暴击')
@@ -447,14 +573,38 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
                 self.trash_and_esc()
                 return False
 
-        # 5. 评分阈值判定
-        if score < threshold:
-            self.fail_reason = f'{stage_label}_评分{score:.1f}<{threshold}'
-            self.log_info(f'[{stage_label}] 评分 {score:.1f} < {threshold}, 弃置')
+        # 5. 有效词条检查
+        valid_stats = self.config.get('有效词条', [])
+        valid_count = 0
+        valid_names = []
+        for p_raw, v_str in paired:
+            pname, _ = self._normalize_stat(p_raw, v_str)
+            if pname in valid_stats:
+                valid_count += 1
+                valid_names.append(pname)
+
+        valid_threshold = self.config.get(f'{stage_label}有效词条数', 0)
+        enable_valid = self.config.get('启用有效词条检查')
+        if enable_valid and valid_count < valid_threshold:
+            self.fail_reason = f'{stage_label}_有效词条{valid_count}<{valid_threshold}'
+            self.log_info(f'[{stage_label}] 有效词条 {valid_count}({",".join(valid_names)}) < {valid_threshold}, 弃置')
             self.trash_and_esc()
             return False
 
-        # 6. 通过! 满级则上锁
+        # 6. 评分阈值判定
+        enable_score = self.config.get('启用评分')
+        if enable_score:
+            self.log_info(f'[{stage_label}] 评分={score:.1f} 阈值={threshold} | '
+                          f'有效词条={valid_count}/{valid_threshold} | {total_count}条')
+            if score < threshold:
+                self.fail_reason = f'{stage_label}_评分{score:.1f}<{threshold}'
+                self.log_info(f'[{stage_label}] 评分 {score:.1f} < {threshold}, 弃置')
+                self.trash_and_esc()
+                return False
+        else:
+            self.log_info(f'[{stage_label}] 评分已关闭 | 有效词条={valid_count}/{valid_threshold} | {total_count}条')
+
+        # 7. 通过! 满级则上锁
         if total_count >= 5:
             self.lock_and_esc()
             return None
