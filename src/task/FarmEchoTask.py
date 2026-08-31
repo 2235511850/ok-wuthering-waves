@@ -56,8 +56,12 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                           'Nightmare: Hecate', 'Fenrico', 'Nameless Explorer']
         self.config_type['Boss'] = {'type': "drop_down", 'options': self.boss_list}
         self.combat_end_condition = self.find_echos
-        self.total_weekly_number = 9
-        self.total_boss_number = 20
+        self.book_structures = {
+            'Weekly Challenge': [1, 2, 3, 4],      # 战歌重奏: 每段header下的boss数
+            'Boss Challenge': [1, 1, 4, 7, 1, 9],  # 强敌讨伐: 每段header下的boss数
+        }
+        self.total_weekly_number = sum(self.book_structures['Weekly Challenge'])
+        self.total_boss_number = sum(self.book_structures['Boss Challenge'])
         self.add_exit_after_config()
         self._has_treasure = False
         self._in_realm = False
@@ -256,7 +260,8 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
         self.info_set('Teleport to Boss', f'{teleport_to_boss} {serial_number - 1}')
         self.openF2Book('gray_book_boss')
         self.open_boss_book(feature)
-        is_team = self.click_on_book_target(serial_number, total_number)
+        structure = self.book_structures.get(teleport_to_boss)
+        is_team = self.click_on_book_target(serial_number, total_number, structure)
         if is_team:
             if teleport_to_boss == 'Weekly Challenge':
                 self.click_configured_boss_level()
