@@ -76,15 +76,14 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
             # --- 筛选模式 ---
             '筛选模式': '保守',
 
-            # --- 硬性底线（独立开关） ---
-            '必须暴击': True,
-            '必须暴击伤害': True,
+            # --- 硬性底线 ---
+            '双暴要求': '必须双暴',
 
             # --- 评分系统（二值评分：有效词条得 value/max_value，无效得0） ---
             '启用评分': True,
             '15级评分阈值': 0.0,
-            '20级评分阈值': 1.5,
-            '25级评分阈值': 2.5,
+            '20级评分阈值': 2.0,
+            '25级评分阈值': 3.5,
 
             # --- 有效词条系统 ---
             '启用有效词条检查': True,
@@ -109,17 +108,19 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
         self.config_type['启用有效词条检查'] = {
             'sub_configs': {True: ['有效词条', '15级有效词条数', '20级有效词条数', '25级有效词条数']}
         }
-        # 有效词条：多选
+        # 双暴要求：下拉单选
+        self.config_type['双暴要求'] = {
+            'options': ['必须双暴', '至少一个'],
+        }
         self.config_type['有效词条'] = {
             'options': ALL_STAT_NAMES,
         }
 
         self.config_description = {
             '筛选模式': '保守=0→15→20→25三级止损（最省材料）; 标准=0→20→25两级止损; 激进=0→25快速放入一步到位（最费材料）',
-            '必须暴击': '开启后声骸最终必须拥有暴击词条，剩余孔位不足以凑齐则提前弃置',
-            '必须暴击伤害': '开启后声骸最终必须拥有暴击伤害词条，剩余孔位不足以凑齐则提前弃置',
+            '双暴要求': '必须双暴=暴击和暴击伤害都要有; 至少一个=暴击或暴击伤害有一个即可',
             '启用评分': '开启后按评分阈值筛选，关闭则只看有效词条',
-            '15级评分阈值': '15级（3条词条）时二值评分下限，有效词条得 value/满值，无效得0，满分=有效词条数',
+            '15级评分阈值': '15级（3条词条）时二值评分下限，有效词条得 value/满值，无效得0，暴击/暴击伤害额外×1.5，满分6.0',
             '20级评分阈值': '20级（4条词条）时二值评分下限',
             '25级评分阈值': '25级（5条满级）时最终二值评分下限',
             '启用有效词条检查': '开启后按有效词条数量筛选，关闭则只看评分',
@@ -440,6 +441,7 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
 
     def _compute_score(self, paired_stats):
         """二值评分: 有效词条得 value/max_value，无效词条得 0
+        暴击/暴击伤害额外乘1.5系数（双暴特化）
         有效词条来源: self.config.get('有效词条')
         小攻击/小生命/小防御折算为对应百分比后匹配有效词条列表
 
@@ -451,14 +453,18 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
         detail = []  # 仅用于日志
 
         valid_stats = self.config.get('有效词条', [])
+        CRIT_FACTOR = 1.5
 
         for p_raw, v_str in paired_stats:
             pname, value = self._normalize_stat(p_raw, v_str)
+            is_crit = False
 
             if pname == '暴击':
                 has_crit_rate = True
+                is_crit = True
             elif pname == '暴击伤害':
                 has_crit_dmg = True
+                is_crit = True
 
             # 小攻击/小生命/小防御固定值词条: 折算为等效百分比
             if pname == '攻击':
@@ -476,8 +482,11 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
 
             if is_valid and max_val > 0:
                 norm_value = value / max_val
-                score += norm_value
-                detail.append(f'{pname}={value:.1f}/{max_val}={norm_value:.2f}✓')
+                factor = CRIT_FACTOR if is_crit else 1.0
+                line_score = norm_value * factor
+                score += line_score
+                tag = f'×{factor}' if factor != 1.0 else ''
+                detail.append(f'{pname}={value:.1f}/{max_val}={norm_value:.2f}{tag}={line_score:.2f}✓')
             elif is_valid:
                 detail.append(f'{pname}={value:.1f}[满值未知,跳过]✓')
             else:
@@ -509,16 +518,20 @@ class EnhanceEchoV2Task(BaseWWTask, FindFeature):
         self.info_set('当前评分', round(score, 1))
         self.info_set('词条数', total_count)
 
-        # 4. 硬性底线检查: 剩余孔位能否凑齐必须的暴击/暴击伤害
-        must_crit = self.config.get('必须暴击')
-        must_crit_dmg = self.config.get('必须暴击伤害')
-        if must_crit or must_crit_dmg:
-            missing = (1 if must_crit and not has_crit_rate else 0) + \
-                      (1 if must_crit_dmg and not has_crit_dmg else 0)
-            remaining = 5 - total_count
+        # 4. 硬性底线检查: 双暴要求
+        crit_requirement = self.config.get('双暴要求', '必须双暴')
+        remaining = 5 - total_count
+        if crit_requirement == '必须双暴':
+            missing = (1 if not has_crit_rate else 0) + (1 if not has_crit_dmg else 0)
             if missing > 0 and remaining < missing:
                 self.fail_reason = f'{stage_label}_硬底线_缺{missing}孔剩{remaining}'
-                self.log_info(f'[{stage_label}] 剩余{remaining}孔无法凑齐硬底线(缺{missing}), 弃置')
+                self.log_info(f'[{stage_label}] 剩余{remaining}孔无法凑齐全双暴(缺{missing}), 弃置')
+                self.trash_and_esc()
+                return False
+        elif crit_requirement == '至少一个':
+            if not has_crit_rate and not has_crit_dmg and remaining < 1:
+                self.fail_reason = f'{stage_label}_硬底线_无双暴孔剩{remaining}'
+                self.log_info(f'[{stage_label}] 剩余{remaining}孔无法凑齐任一双暴, 弃置')
                 self.trash_and_esc()
                 return False
 
