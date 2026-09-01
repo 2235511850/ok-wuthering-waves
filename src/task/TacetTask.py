@@ -2,6 +2,7 @@
 from ok import Logger
 from src.task.BaseCombatTask import BaseCombatTask, CharRevivedException
 from src.task.WWOneTimeTask import WWOneTimeTask
+from src.task.tacet_names import TACET_NAMES, TACET_GROUPS
 
 logger = Logger.get_logger(__name__)
 
@@ -14,14 +15,20 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
         self.name = "🌊 Tacet Suppression"
         self.support_schedule_task = True
         default_config = {
-            'Which Tacet Suppression to Farm': 1,  # starts with 1
+            'Which Tacet Suppression to Farm': TACET_NAMES[0],
         }
-        self.structure = [2, 5, 5, 7]
+        self.structure = [len(group) for group in TACET_GROUPS]
         self.total_number = sum(self.structure)
         self.target_enemy_time_out = 10
         default_config.update(self.default_config)
         self.config_description = {
-            'Which Tacet Suppression to Farm': 'The Tacet Suppression number in the F2 list.',
+            'Which Tacet Suppression to Farm': 'Select the Tacet Suppression to farm.',
+        }
+        self.config_type = {
+            'Which Tacet Suppression to Farm': {
+                'type': 'drop_down',
+                'options': TACET_NAMES,
+            },
         }
         self.default_config = default_config
         self.door_walk_method = {  # starts with 0
@@ -63,7 +70,11 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
                 return self.not_enough_stamina()
 
             self.open_boss_book('wuyin')
-            index = config.get('Which Tacet Suppression to Farm', 1) - 1
+            value = config.get('Which Tacet Suppression to Farm', TACET_NAMES[0])
+            if isinstance(value, int):  # backward compat with old numeric config
+                index = value - 1
+            else:
+                index = TACET_NAMES.index(value)
             self.teleport_to_tacet(index)
             self.click_team_challenge()
             while True:
