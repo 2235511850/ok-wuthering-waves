@@ -159,7 +159,7 @@ config = {
     'blur_area': blur_area,
     'gui_icon': 'icons/icon.png',
     'global_configs': [key_config_option, char_config_option, monthly_card_config_option],
-    'custom_tabs': [["src.gui.CharacterCodeTab", "CharacterCodeTab"]],
+    'custom_tabs': [["src.gui.TaskQueueTab", "TaskQueueTab"], ["src.gui.CharacterCodeTab", "CharacterCodeTab"]],
     'ocr': {
         'lib': 'onnxocr',
         'auto_simplify': True,
@@ -258,6 +258,7 @@ config = {
         ["src.task.ForgeryTask", "ForgeryTask"],
         ["src.task.SimulationTask", "SimulationTask"],
         ["src.task.MultiAccountDailyTask", "MultiAccountDailyTask"],
+        ["src.task.TaskQueueTask", "TaskQueueTask"],
         ["src.task.MergeEchoTask", "MergeEchoTask"],
         ["src.task.EnhanceEchoTask", "EnhanceEchoTask"],
         ["src.task.EnhanceEchoV2Task", "EnhanceEchoV2Task"],
