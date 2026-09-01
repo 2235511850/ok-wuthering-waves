@@ -8,6 +8,8 @@ from ok import Logger, TaskDisabledException, color_range_to_bound
 from src.task.BaseCombatTask import BaseCombatTask, white_color
 from src.task.WWOneTimeTask import WWOneTimeTask
 from ok import find_boxes_by_name
+from src.task.boss_names import BOSS_CHALLENGE_NAMES, WEEKLY_CHALLENGE_NAMES, \
+    BOSS_CHALLENGE_STRUCTURE, WEEKLY_CHALLENGE_STRUCTURE
 
 logger = Logger.get_logger(__name__)
 
@@ -28,8 +30,8 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
             'Echo Pickup Method': 'Walk',
             'Use Liberation': True,
             'Switch to Healer before and after Combat': True,
-            'Which Weekly Boss to Teleport': '失坠困咎之庭·战歌重奏',
-            'Which Boss Challenge to Teleport': '天傀劫煞',
+            'Which Weekly Boss to Teleport': WEEKLY_CHALLENGE_NAMES[0],
+            'Which Boss Challenge to Teleport': BOSS_CHALLENGE_NAMES[0],
         })
         self.config_description.update({
             'Boss': 'Select boss profile (includes Combat Wait Time)',
@@ -41,31 +43,12 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
             'Which Weekly Boss to Teleport': '选择要传送的战歌重奏boss',
             'Which Boss Challenge to Teleport': '选择要传送的强敌讨伐boss'
         })
-        # Boss列表数据，供下拉框和跳转逻辑使用
-        # 每页: [(header名, [boss名...]), ...]
-        self.book_bosses = {
-            'Boss Challenge': [
-                ('限时提前开放', ['天傀劫煞']),
-                ('瑝珑·梦州', ['万囹牢·朽躯']),
-                ('索拉里斯之极·拉海洛', ['梦魇亚当·重锤', '无铭探索者', '海维夏', '炉芯机骸']),
-                ('黎那汐塔', ['海之女', '伪作的神王', '芬莱克', '荣耀狮像', '叹息古龙', '罗蕾莱', '异构武装']),
-                ('黑海岸', ['无归的谬误']),
-                ('瑝珑·今州', ['无冠者', '朔雷之鳞', '云闪之鳞', '燎照之骑', '飞廉之猩', '哀声鸷', '无常凶鹭', '辉萤军势', '聚械机偶']),
-            ],
-            'Weekly Challenge': [
-                ('瑝珑·梦州', ['失坠困咎之庭·战歌重奏']),
-                ('索拉里斯之极·拉海洛', ['虚妄诞生之种·战歌重奏', '星海迷途之扉·战歌重奏']),
-                ('黎那汐塔', ['烬夜天启之章·战歌重奏', '命途断章之轮·战歌重奏', '彼世猩红之幕·战歌重奏']),
-                ('瑝珑·今州', ['时序命定之争·战歌重奏', '无冠巨像之心·战歌重奏', '无序边境之火·战歌重奏', '昔日咏叹之钟·战歌重奏']),
-            ],
-        }
         self.book_structures = {
-            key: [len(bosses) for _, bosses in groups] for key, groups in self.book_bosses.items()
+            'Boss Challenge': BOSS_CHALLENGE_STRUCTURE,
+            'Weekly Challenge': WEEKLY_CHALLENGE_STRUCTURE,
         }
-        self.total_weekly_number = sum(self.book_structures['Weekly Challenge'])
-        self.total_boss_number = sum(self.book_structures['Boss Challenge'])
-        self.boss_challenge_bosses = [name for _, bosses in self.book_bosses['Boss Challenge'] for name in bosses]
-        self.weekly_challenge_bosses = [name for _, bosses in self.book_bosses['Weekly Challenge'] for name in bosses]
+        self.total_weekly_number = sum(WEEKLY_CHALLENGE_STRUCTURE)
+        self.total_boss_number = sum(BOSS_CHALLENGE_STRUCTURE)
 
         self.find_echo_method = ['Yolo', 'Run in Circle', 'Walk']
         self.config_type['Teleport to Boss'] = {'type': "drop_down",
@@ -77,9 +60,9 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                                                                         'Boss Level'],
                                                 }}
         self.config_type['Which Weekly Boss to Teleport'] = {'type': "drop_down",
-                                                             'options': self.weekly_challenge_bosses}
+                                                             'options': WEEKLY_CHALLENGE_NAMES}
         self.config_type['Which Boss Challenge to Teleport'] = {'type': "drop_down",
-                                                                'options': self.boss_challenge_bosses}
+                                                                'options': BOSS_CHALLENGE_NAMES}
         self.config_type['Boss Level'] = {'type': "drop_down", 'options': ['50', '60', '70', '80', '90'], }
         self.config_type['Echo Pickup Method'] = {'type': "drop_down", 'options': self.find_echo_method}
         self.boss_list = ['Other', 'Hyvatia', 'Fallacy of No Return', 'Sentry Construct', 'Lorelei', 'Lioness of Glory',
@@ -272,16 +255,18 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
         self.ensure_main(time_out=180)
         if teleport_to_boss == 'Weekly Challenge':
             feature = 'zhange'
-            boss_name = self.config.get('Which Weekly Boss to Teleport', self.weekly_challenge_bosses[0])
-            boss_names = self.weekly_challenge_bosses
+            config_key = 'Which Weekly Boss to Teleport'
+            boss_names = WEEKLY_CHALLENGE_NAMES
             total_number = self.total_weekly_number
         elif teleport_to_boss == 'Boss Challenge':
             feature = 'qiangdi'
-            boss_name = self.config.get('Which Boss Challenge to Teleport', self.boss_challenge_bosses[0])
-            boss_names = self.boss_challenge_bosses
+            config_key = 'Which Boss Challenge to Teleport'
+            boss_names = BOSS_CHALLENGE_NAMES
             total_number = self.total_boss_number
         else:
             raise RuntimeError(f'Unknown Teleport to Boss config: {teleport_to_boss}')
+
+        boss_name = self.config.get(config_key, boss_names[0])
 
         serial_number = boss_names.index(boss_name) + 1
         self.log_info(f'teleport target: {boss_name} (#{serial_number}/{total_number})')
