@@ -5,7 +5,7 @@ UI 结构：
   卡片列表：每个条目一张 ConfigCard，带启用开关 + 上移/下移/删除/单独运行按钮
 """
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel, ComboBox, FluentIcon, NavigationItemPosition,
     PrimaryPushButton, PrimaryToolButton, PushButton, SwitchButton,
@@ -59,6 +59,9 @@ class QueueEntryCard(QWidget):
         self._on_move = on_move
         self._on_toggle = on_toggle
         self._on_run_single = on_run_single
+
+        # 卡片高度随内容自适应，不撑满剩余空间（避免条目少时居中+自适应间距）
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
