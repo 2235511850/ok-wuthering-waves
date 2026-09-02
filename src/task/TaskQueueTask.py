@@ -51,10 +51,17 @@ class TaskQueueTask(WWOneTimeTask, BaseWWTask):
         task_class = entry['task_class']
         entry_config = entry.get('config', {})
 
+        self.log_info(f'Queue entry {index + 1}/{total}: task_class={task_class}, display_name={task_name}, '
+                      f'enabled={entry.get("enabled", True)}, config_keys={list(entry_config.keys())}')
+
         target_task = self._find_task_by_class_name(task_class)
         if target_task is None:
-            self.log_error(f'Task not found: {task_class}')
+            self.log_error(f'Task not found: {task_class}. Available: '
+                          f'{[type(t).__name__ for t in self.executor.onetime_tasks]}')
             return False
+
+        self.log_info(f'Queue: found task instance {type(target_task).__name__}, '
+                      f'current config={dict(target_task.config)}')
 
         self.info_set('Queue Progress', f'{index + 1}/{total}')
         self.info_set('Running', task_name)
@@ -62,10 +69,12 @@ class TaskQueueTask(WWOneTimeTask, BaseWWTask):
 
         # 保存原始 config，覆盖为条目配置
         old_config = dict(target_task.config)
+        self.log_info(f'Queue: overriding config for {task_class}: {entry_config}')
         try:
             # 覆盖配置（只覆盖条目中有的 key）
             for key, value in entry_config.items():
                 target_task.config[key] = value
+            self.log_info(f'Queue: config after override: {dict(target_task.config)}')
             self.run_task_by_class(type(target_task))
             self.log_info(f'Queue: {task_name} completed ({index + 1}/{total})')
             return True
@@ -75,6 +84,7 @@ class TaskQueueTask(WWOneTimeTask, BaseWWTask):
             return False
         finally:
             # 还原 config
+            self.log_info(f'Queue: restoring config for {task_class}')
             target_task.config.clear()
             dict.update(target_task.config, old_config)
 
@@ -85,6 +95,10 @@ class TaskQueueTask(WWOneTimeTask, BaseWWTask):
         manager.load()  # 重新加载最新数据
         entries = [t for t in manager.get_current_tasks() if t.get('enabled', True)]
         stop_on_error = self.config.get(STOP_ON_ERROR, False)
+
+        self.log_info(f'Queue run start: profile={manager.current_profile}, '
+                      f'total_entries={len(manager.get_current_tasks())}, '
+                      f'enabled_entries={len(entries)}, stop_on_error={stop_on_error}')
 
         if not entries:
             self.log_info('No tasks in queue')
