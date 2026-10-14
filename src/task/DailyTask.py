@@ -9,7 +9,6 @@ from src.task.GardenTask import GardenTask
 from src.task.MergeEchoTask import MergeEchoTask
 from src.task.NightmareNestTask import NightmareNestTask
 from src.task.TacetTask import TacetTask
-from src.task.tacet_names import TACET_NAMES
 from src.task.SimulationTask import SimulationTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask
@@ -32,14 +31,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.support_tasks = ["Tacet Suppression", "Forgery Challenge", "Simulation Challenge"]
         self.default_config = {
             'Which to Farm': self.support_tasks[0],
-            'Which Tacet Suppression to Farm': TACET_NAMES[0],
+            'Which Tacet Suppression to Farm': 1,  # starts with 1
             'Which Forgery Challenge to Farm': 1,  # starts with 1
             'Material Selection': 'Shell Credit',
             'Farm Nightmare Nest for Daily Echo': True,
             ADDITIONAL_TASKS: [CHECK_WEEKLY_GARDEN],
         }
         self.config_description = {
-            'Which Tacet Suppression to Farm': 'Select the Tacet Suppression to farm.',
+            'Which Tacet Suppression to Farm': 'The Tacet Suppression number in the F2 list.',
             'Which Forgery Challenge to Farm': 'The Forgery Challenge number in the F2 list.',
             'Material Selection': 'Resonator EXP / Weapon EXP / Shell Credit',
             'Farm Nightmare Nest for Daily Echo': 'Farm 1 Echo from Nightmare Nest to complete Daily Task when needed.',
@@ -57,10 +56,6 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     'Simulation Challenge': [
                         'Material Selection'],
                 }
-            },
-            'Which Tacet Suppression to Farm': {
-                'type': 'drop_down',
-                'options': TACET_NAMES,
             },
             'Material Selection': {
                 'type': 'drop_down',

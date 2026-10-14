@@ -260,10 +260,10 @@ config = {
     'launcher_error_log_file': 'logs/launcher_error.log',
     'version': version,
     'onetime_tasks': [  # tasks to execute
-        ["src.task.DailyTask", "DailyTask"],
-        ["src.task.FarmEchoTask", "FarmEchoTask"],
+        ["src.task.DailyV2Task", "DailyV2Task"],
+        ["src.task.FarmEchoV2Task", "FarmEchoV2Task"],
         ["src.task.NightmareNestTask", "NightmareNestTask"],
-        ["src.task.TacetTask", "TacetTask"],
+        ["src.task.TacetV2Task", "TacetV2Task"],
         ["src.task.ForgeryTask", "ForgeryTask"],
         ["src.task.SimulationTask", "SimulationTask"],
         ["src.task.MultiAccountDailyTask", "MultiAccountDailyTask"],

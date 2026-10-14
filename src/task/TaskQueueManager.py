@@ -9,7 +9,14 @@ QUEUE_FILE = Path('configs/task_queue.json')
 # - TaskQueueTask 自身防止递归
 # - DailyTask 内含子任务，单独排队重复消耗体力
 # - MultiAccountDailyTask 自带多账号切换
-EXCLUDE_NAMES = {'📋 任务队列', '👥 Multi Account Daily Task', '📅 Daily Task'}
+EXCLUDE_NAMES = {'📋 任务队列', '👥 Multi Account Daily Task', '📅 Daily Task', '📅 每日任务V2(二开)'}
+
+# V2 替换注册后的旧类名迁移（旧 task_queue.json 里的 task_class 自动升级）
+LEGACY_CLASS_MIGRATION = {
+    'TacetTask': 'TacetV2Task',
+    'FarmEchoTask': 'FarmEchoV2Task',
+    'DailyTask': 'DailyV2Task',
+}
 
 
 class QueueConfig(dict):
@@ -81,6 +88,7 @@ class TaskQueueManager:
                     data = json.load(f)
                 self.profiles = data.get('profiles', {})
                 self.current_profile = data.get('current_profile')
+                self._migrate_legacy_classes()
             except (json.JSONDecodeError, IOError):
                 pass
         if not self.profiles:
@@ -88,6 +96,19 @@ class TaskQueueManager:
             self.current_profile = '默认'
         if self.current_profile not in self.profiles:
             self.current_profile = list(self.profiles.keys())[0]
+
+    def _migrate_legacy_classes(self):
+        """旧类名（TacetTask 等）迁移为 V2 类名，有变化则落盘。"""
+        changed = False
+        for profile in self.profiles.values():
+            for entry in profile.get('tasks', []):
+                old = entry.get('task_class')
+                new = LEGACY_CLASS_MIGRATION.get(old)
+                if new:
+                    entry['task_class'] = new
+                    changed = True
+        if changed:
+            self.save()
 
     def save(self):
         QUEUE_FILE.parent.mkdir(parents=True, exist_ok=True)
