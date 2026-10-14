@@ -261,9 +261,12 @@ config = {
     'version': version,
     'onetime_tasks': [  # tasks to execute
         ["src.task.DailyV2Task", "DailyV2Task"],
+        ["src.task.DailyTask", "DailyTask"],
         ["src.task.FarmEchoV2Task", "FarmEchoV2Task"],
+        ["src.task.FarmEchoTask", "FarmEchoTask"],
         ["src.task.NightmareNestTask", "NightmareNestTask"],
         ["src.task.TacetV2Task", "TacetV2Task"],
+        ["src.task.TacetTask", "TacetTask"],
         ["src.task.ForgeryTask", "ForgeryTask"],
         ["src.task.SimulationTask", "SimulationTask"],
         ["src.task.MultiAccountDailyTask", "MultiAccountDailyTask"],
