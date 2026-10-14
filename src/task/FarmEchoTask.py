@@ -9,7 +9,9 @@ from src.task.BaseCombatTask import BaseCombatTask, CharRevivedException, white_
 from src.task.WWOneTimeTask import WWOneTimeTask
 from ok import find_boxes_by_name
 from src.task.boss_names import BOSS_CHALLENGE_NAMES, WEEKLY_CHALLENGE_NAMES, \
-    BOSS_CHALLENGE_STRUCTURE, WEEKLY_CHALLENGE_STRUCTURE
+    BOSS_CHALLENGE_STRUCTURE, WEEKLY_CHALLENGE_STRUCTURE, \
+    NIGHTMARE_CHALLENGE_NAMES, NIGHTMARE_CHALLENGE_STRUCTURE, \
+    NIGHTMARE_CHALLENGE_TOTAL, NIGHTMARE_NEST_COUNT
 
 logger = Logger.get_logger(__name__)
 
@@ -32,7 +34,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
             'Switch to Healer before and after Combat': True,
             'Which Weekly Boss to Teleport': WEEKLY_CHALLENGE_NAMES[0],
             'Which Boss Challenge to Teleport': BOSS_CHALLENGE_NAMES[0],
-            'Which Special Nightmare to Teleport': 1,
+            'Which Nightmare Boss to Teleport': NIGHTMARE_CHALLENGE_NAMES[0],
         })
         self.config_description.update({
             'Boss': 'Select boss profile (includes Combat Wait Time)',
@@ -43,38 +45,40 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
             'Switch to Healer before and after Combat': 'Better Chance to Keep Character Alive',
             'Which Weekly Boss to Teleport': '选择要传送的战歌重奏boss',
             'Which Boss Challenge to Teleport': '选择要传送的强敌讨伐boss',
-            'Which Special Nightmare to Teleport': '选择要传送的特殊梦魇(F2梦魇净化列表,从上到下从1开始)',
+            'Which Nightmare Boss to Teleport': '选择要传送的梦魇祓除boss'
         })
         self.book_structures = {
             'Boss Challenge': BOSS_CHALLENGE_STRUCTURE,
             'Weekly Challenge': WEEKLY_CHALLENGE_STRUCTURE,
+            'Nightmare Challenge': NIGHTMARE_CHALLENGE_STRUCTURE,
         }
         self.total_weekly_number = sum(WEEKLY_CHALLENGE_STRUCTURE)
         self.total_boss_number = sum(BOSS_CHALLENGE_STRUCTURE)
+        self.total_nightmare_number = NIGHTMARE_CHALLENGE_TOTAL
 
         self.find_echo_method = ['Yolo', 'Run in Circle', 'Walk']
         self.config_type['Teleport to Boss'] = {'type': "drop_down",
                                                 'options': ['No', 'Weekly Challenge',
-                                                            'Boss Challenge', 'Special Nightmare'],
+                                                            'Boss Challenge',
+                                                            'Nightmare Challenge'],
                                                 'sub_configs': {
                                                     'Weekly Challenge': ['Which Weekly Boss to Teleport', 'Boss Level'],
                                                     'Boss Challenge': ['Which Boss Challenge to Teleport',
                                                                        'Boss Level'],
-                                                    'Special Nightmare': ['Which Special Nightmare to Teleport',
-                                                                           'Boss Level'],
+                                                    'Nightmare Challenge': ['Which Nightmare Boss to Teleport'],
                                                 }}
         self.config_type['Which Weekly Boss to Teleport'] = {'type': "drop_down",
                                                              'options': WEEKLY_CHALLENGE_NAMES}
         self.config_type['Which Boss Challenge to Teleport'] = {'type': "drop_down",
                                                                 'options': BOSS_CHALLENGE_NAMES}
+        self.config_type['Which Nightmare Boss to Teleport'] = {'type': "drop_down",
+                                                               'options': NIGHTMARE_CHALLENGE_NAMES}
         self.config_type['Boss Level'] = {'type': "drop_down", 'options': ['50', '60', '70', '80', '90'], }
         self.config_type['Echo Pickup Method'] = {'type': "drop_down", 'options': self.find_echo_method}
         self.boss_list = ['Other', 'Hyvatia', 'Fallacy of No Return', 'Sentry Construct', 'Lorelei', 'Lioness of Glory',
                           'Nightmare: Hecate', 'Fenrico', 'Nameless Explorer']
         self.config_type['Boss'] = {'type': "drop_down", 'options': self.boss_list}
         self.combat_end_condition = self.find_echos
-        # F2 Nightmare Purification list: nightmare nests, then special nightmares
-        self.nightmare_structure = [5, 10]
         self.add_exit_after_config()
         self._has_treasure = False
         self._in_realm = False
@@ -142,12 +146,17 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
         self._in_realm = self.in_realm()
         self.manage_boss_parameters()
         self.log_info(f'in_realm: {self._in_realm}')
+        self.log_info(f'do_run: teleport_to_boss_enabled={self.teleport_to_boss_enabled()}, '
+                      f'Teleport to Boss config={self.config.get("Teleport to Boss", "No")!r}')
         self._farm_start_time = time.time()
         self._has_treasure = False
         self.is_revived = False
         self.init_parameters()
+        self.log_info(f'do_run: after init_parameters, config={dict(self.config)}')
         if self.teleport_to_boss_enabled():
+            self.log_info('do_run: calling teleport_to_configured_boss_and_prepare')
             self.teleport_to_configured_boss_and_prepare()
+            self.log_info('do_run: teleport_to_configured_boss_and_prepare completed')
         while count < self.config.get("Repeat Farm Count", 0):
             round_start_count = count
             try:
@@ -285,6 +294,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
 
     def teleport_to_configured_boss(self):
         teleport_to_boss = self.config.get('Teleport to Boss', 'No')
+        self.log_info(f'teleport_to_configured_boss start: Teleport to Boss={teleport_to_boss}')
         self.ensure_main(time_out=180)
         structure = None
         if teleport_to_boss == 'Weekly Challenge':
@@ -297,40 +307,51 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
             config_key = 'Which Boss Challenge to Teleport'
             boss_names = BOSS_CHALLENGE_NAMES
             total_number = self.total_boss_number
-        elif teleport_to_boss == 'Special Nightmare':
+        elif teleport_to_boss == 'Nightmare Challenge':
             feature = 'mengyan'
-            serial_number = self.config.get('Which Special Nightmare to Teleport', 1)
-            structure = self.nightmare_structure
-            total_number = sum(structure)
+            config_key = 'Which Nightmare Boss to Teleport'
+            boss_names = NIGHTMARE_CHALLENGE_NAMES
+            total_number = self.total_nightmare_number
         else:
             raise RuntimeError(f'Unknown Teleport to Boss config: {teleport_to_boss}')
 
-        if teleport_to_boss == 'Special Nightmare':
-            # special nightmares are listed after the nightmare nests
-            book_serial = serial_number + sum(structure[:-1])
-            self.log_info(f'teleport target: Special Nightmare #{serial_number}')
-            self.info_set('Teleport to Boss', f'{teleport_to_boss} #{serial_number}')
-        else:
-            boss_name = self.config.get(config_key, boss_names[0])
-            serial_number = boss_names.index(boss_name) + 1
-            book_serial = serial_number
-            self.log_info(f'teleport target: {boss_name} (#{serial_number}/{total_number})')
-            self.info_set('Teleport to Boss', f'{teleport_to_boss} {boss_name} #{serial_number}')
+        boss_name = self.config.get(config_key, boss_names[0])
 
+        # For Nightmare Challenge, boss serial number is offset by the nest group
+        # (5 nests come before the 10 nightmare bosses in the F2 book)
+        if teleport_to_boss == 'Nightmare Challenge':
+            serial_number = boss_names.index(boss_name) + 1 + NIGHTMARE_NEST_COUNT
+        else:
+            serial_number = boss_names.index(boss_name) + 1
+        self.log_info(f'teleport target: {boss_name} (#{serial_number}/{total_number})')
+        self.log_info(f'config dump: {config_key}={self.config.get(config_key)!r}, '
+                      f'all config={dict(self.config)}')
+        self.log_info(f'boss_names list: {boss_names}')
+        self.log_info(f'boss_name found at index: {boss_names.index(boss_name)}, serial_number: {serial_number}')
+        self.info_set('Teleport to Boss', f'{teleport_to_boss} {boss_name} #{serial_number}')
         self.openF2Book('gray_book_boss')
         self.open_boss_book(feature)
-        is_team = self.click_on_book_target(book_serial, total_number, structure)
-        if is_team:
+        structure = self.book_structures.get(teleport_to_boss)
+        self.log_info(f'book_structures: {self.book_structures}, structure for {teleport_to_boss}: {structure}')
+        self.log_info(f'calling click_on_book_target(serial_number={serial_number}, total_number={total_number}, structure={structure})')
+        is_team = self.click_on_book_target(serial_number, total_number, structure)
+        self.log_info(f'click_on_book_target returned is_team={is_team}')
+        if is_team == 'story':
+            # Story dialog confirmed: already loaded into boss realm, skip team challenge
+            self.log_info('story dialog: already in realm, skip click_team_challenge')
+        elif is_team:
             if teleport_to_boss == 'Weekly Challenge':
                 self.click_configured_boss_level()
                 self.click_solo_challenge()
             self.click_team_challenge()
+            self.wait_in_team_and_world(time_out=120)
+            self.sleep(2)
         else:
             self.realm_entry_at_heal_point = False  # 传送到 boss 附近再走进本, 退本不会回到信标
             self.wait_click_travel()
-        self.wait_in_team_and_world(time_out=120)
-        self.sleep(2)
-        return is_team
+            self.wait_in_team_and_world(time_out=120)
+            self.sleep(2)
+        return is_team == True or is_team == 'story'
 
     def walk_after_boss_teleport(self):
         self.log_info('walk after boss teleport until combat or F')

@@ -200,7 +200,7 @@ class TaskQueueTab(CustomTab):
         toolbar.addWidget(self.stop_on_error_switch)
 
         self.run_all_btn = PrimaryPushButton(FluentIcon.PLAY, self.tr('全部运行'))
-        self.run_all_btn.clicked.connect(self._on_run_all)
+        self.run_all_btn.clicked.connect(self._on_run_all_clicked)
         toolbar.addWidget(self.run_all_btn)
 
         self.addLayout(toolbar)
@@ -333,28 +333,53 @@ class TaskQueueTab(CustomTab):
     def _on_stop_on_error_changed(self, checked):
         self.manager.set_stop_on_error(checked)
 
+    def _on_run_all_clicked(self):
+        """全部运行/停止 按钮切换。"""
+        if self._is_running:
+            self._on_stop_all()
+        else:
+            self._on_run_all()
+
+    def _on_stop_all(self):
+        """停止当前正在运行的队列。"""
+        logger.info('StopAll: stopping current task')
+        og.executor.stop_current_task()
+
     def _on_run_all(self):
         """启动 TaskQueueTask 执行整个队列。"""
         task = og.executor.get_task_by_class(TaskQueueTask)
         if task:
             # 同步 stop_on_error 到 task config
             task.config['出错即停止'] = self.manager.get_stop_on_error()
+            logger.info(f'RunAll: enabling TaskQueueTask, stop_on_error={task.config["出错即停止"]}')
             task.enable()
+            # 确保 executor 线程已启动（enable 只入队，不启动线程）
+            og.executor.start()
+            logger.info('RunAll: executor.start() called')
+        else:
+            logger.error('RunAll: TaskQueueTask not found in executor')
 
     def _on_run_single(self, entry_id):
         """单独运行一个任务条目。"""
         if self._is_running:
+            logger.warning(f'RunSingle: already running, skip entry_id={entry_id}')
             return
         entry = self.manager.get_entry(entry_id)
         if entry is None:
+            logger.error(f'RunSingle: entry not found, entry_id={entry_id}')
             return
         task_template = self._find_task_template(entry['task_class'])
         if task_template is None:
+            logger.error(f'RunSingle: task template not found, task_class={entry["task_class"]}')
             return
+        logger.info(f'RunSingle: entry_id={entry_id}, task_class={entry["task_class"]}, '
+                    f'display_name={entry["display_name"]}, config={entry.get("config", {})}')
         # 覆盖 config 后启动
         old_config = dict(task_template.config)
         for key, value in entry.get('config', {}).items():
             task_template.config[key] = value
+        logger.info(f'RunSingle: config overridden, old_config keys={list(old_config.keys())}, '
+                    f'new config={dict(task_template.config)}')
         # TODO: 还原 config 需要在任务完成后执行
         # 暂时用 communicate.task_done 信号监听完成
         class _RestoreGuard:
@@ -373,14 +398,24 @@ class TaskQueueTab(CustomTab):
         guard = _RestoreGuard(task_template, old_config)
         communicate.task_done.connect(guard.restore)
         task_template.enable()
+        # 确保 executor 线程已启动（enable 只入队，不启动线程）
+        og.executor.start()
+        logger.info('RunSingle: executor.start() called')
 
     def _on_task_status(self, task):
-        """监听任务状态变化，更新运行状态。"""
+        """监听任务状态变化，更新运行状态和按钮。"""
         if isinstance(task, TaskQueueTask) or (task is None and self._is_running):
             running = task is not None and getattr(task, 'running', False)
             self._is_running = running
             for card in self.entry_cards:
                 card.set_running(running)
+            # 切换全部运行/停止按钮
+            if running:
+                self.run_all_btn.setIcon(FluentIcon.PAUSE)
+                self.run_all_btn.setText(self.tr('停止'))
+            else:
+                self.run_all_btn.setIcon(FluentIcon.PLAY)
+                self.run_all_btn.setText(self.tr('全部运行'))
 
     def _on_task_list_updated(self):
         """任务列表更新时刷新下拉列表。"""

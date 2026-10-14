@@ -34,3 +34,22 @@ WEEKLY_CHALLENGE_NAMES = [name for group in WEEKLY_CHALLENGE_GROUPS for name in 
 
 BOSS_CHALLENGE_STRUCTURE = [len(group) for group in BOSS_CHALLENGE_GROUPS]
 WEEKLY_CHALLENGE_STRUCTURE = [len(group) for group in WEEKLY_CHALLENGE_GROUPS]
+
+# Nightmare Challenge (梦魇祓除) — 特异梦魇 boss list.
+# F2 book "梦魇祓除" tab contains 2 groups:
+#   Group 1: 5 nightmare nests (梦魇聚落, handled by NightmareNestTask)
+#   Group 2: 10 nightmare 4C bosses (特异梦魇, user-selectable for FarmEchoTask)
+NIGHTMARE_NEST_NAMES = [
+    '穗波市梦魇聚落', '三王峰梦魇聚落', '潮痕岩滩梦魇聚落',
+    '受蚀地梦魇聚落', '千殁沉岛梦魇聚落',
+]
+
+NIGHTMARE_CHALLENGE_NAMES = [
+    '梦魇·赫卡忒', '梦魇·凯尔匹', '梦魇·辉萤军势', '梦魇·哀声鸷', '梦魇·燎照之骑',
+    '梦魇·无冠者', '梦魇·朔雷之鳞', '梦魇·云闪之鳞', '梦魇·无常凶鹭', '梦魇·飞廉之猩',
+]
+
+NIGHTMARE_CHALLENGE_GROUPS = [NIGHTMARE_NEST_NAMES, NIGHTMARE_CHALLENGE_NAMES]
+NIGHTMARE_CHALLENGE_STRUCTURE = [len(group) for group in NIGHTMARE_CHALLENGE_GROUPS]  # [5, 10]
+NIGHTMARE_CHALLENGE_TOTAL = sum(NIGHTMARE_CHALLENGE_STRUCTURE)  # 15
+NIGHTMARE_NEST_COUNT = len(NIGHTMARE_NEST_NAMES)  # 5
