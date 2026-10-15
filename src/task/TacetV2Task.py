@@ -12,7 +12,8 @@ from src.task.TacetTask import TacetTask
 from src.task.tacet_names import TACET_NAMES, TACET_GROUPS
 
 
-class TacetV2Task(TacetTask, BookTargetMixin):
+# 注意: BookTargetMixin 必须放在继承列表第一位（原因见 FarmEchoV2Task 注释）。
+class TacetV2Task(BookTargetMixin, TacetTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

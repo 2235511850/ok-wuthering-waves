@@ -21,7 +21,10 @@ from src.task.boss_names import (
 logger = Logger.get_logger(__name__)
 
 
-class FarmEchoV2Task(FarmEchoTask, BookTargetMixin):
+# 注意: BookTargetMixin 必须放在继承列表第一位。
+# 若写成 (FarmEchoTask, BookTargetMixin)，MRO 中 BaseWWTask 会先于 Mixin 出现，
+# 上游的 click_on_book_target 会拦截 Mixin 的增强版（弹窗兼容/日志全部失效）。
+class FarmEchoV2Task(BookTargetMixin, FarmEchoTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

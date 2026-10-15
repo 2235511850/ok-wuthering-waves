@@ -101,20 +101,33 @@ class BookTargetMixin:
         self.log_info(
             f'click_on_book_target: clicking target at ({target.x + target.width / 2:.0f}, {target.y + target.height / 2:.0f})')
         self.click(target, after_sleep=1)
-        self.log_info(f'click_on_book_target: clicked boss_proceed, checking for story confirmation dialog...')
-        # Handle story confirmation dialog that may appear for some bosses
-        # ("提前到达目标位置可能影响剧情体验，是否确认前往？")
-        # After confirming this dialog, the game loads directly into the boss realm
-        # (skipping the team challenge interface), so we wait for world load and
-        # return 'story' to let the caller skip click_team_challenge.
+        self.log_info(f'click_on_book_target: clicked boss_proceed, checking for confirmation dialog...')
+        # Handle confirmation dialog that may appear for some bosses:
+        #   - story dialog: "提前到达目标位置可能影响剧情体验，是否确认前往？"
+        #     → confirm loads directly into the boss realm (skip team UI)
+        #   - early-access dialog (限时提前开放 boss, e.g. 定序诸理之律): same
+        #     "提示" popup style with 取消/确认 buttons → confirm enters the
+        #     team challenge UI (level select + challenge buttons)
+        # Both popups look identical, so after clicking confirm we detect the
+        # actual post-dialog state via the team UI close button (team_close):
+        #   - team_close found → return True (is_team, caller runs level
+        #     select + team challenge flow)
+        #   - otherwise → wait for realm load and return 'story' (caller
+        #     skips click_team_challenge)
         if confirm := self.wait_feature(
                 ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter'],
                 raise_if_not_found=False,
                 threshold=0.6,
-                time_out=2):
-            self.log_info(f'click_on_book_target: found story confirmation dialog, clicking confirm')
+                time_out=3):
+            self.log_info(f'click_on_book_target: found confirmation dialog, clicking confirm')
             self.click(confirm, after_sleep=1)
-            self.log_info(f'click_on_book_target: confirmed dialog, waiting for realm load...')
+            self.log_info(f'click_on_book_target: confirmed dialog, detecting post-dialog state...')
+            team_ui = self.wait_feature('team_close', time_out=15, raise_if_not_found=False)
+            if team_ui:
+                self.log_info(f'click_on_book_target: team challenge UI detected after confirm, '
+                              f'returning is_team=True for level select + challenge flow')
+                return True
+            self.log_info(f'click_on_book_target: no team UI, treating as direct realm load (story flow)')
             self.wait_in_team_and_world(time_out=120)
             self.log_info(f'click_on_book_target: realm loaded after story dialog')
             return 'story'  # directly entered boss realm, skip team challenge
