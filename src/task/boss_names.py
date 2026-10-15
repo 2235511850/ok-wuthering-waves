@@ -41,6 +41,7 @@ WEEKLY_CHALLENGE_STRUCTURE = [len(group) for group in WEEKLY_CHALLENGE_GROUPS]
 # F2 book "梦魇祓除" tab contains 2 groups:
 #   Group 1: 5 nightmare nests (梦魇聚落, handled by NightmareNestTask)
 #   Group 2: 10 nightmare 4C bosses (特异梦魇, user-selectable for FarmEchoTask)
+# 注意: 梦魇祓除聚落 ≠ 残象聚落, 残象聚落列表见 NightmareNestTask
 NIGHTMARE_NEST_NAMES = [
     '穗波市梦魇聚落', '三王峰梦魇聚落', '潮痕岩滩梦魇聚落',
     '受蚀地梦魇聚落', '千殁沉岛梦魇聚落',
