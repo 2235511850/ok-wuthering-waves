@@ -1,10 +1,11 @@
 # Tacet Suppression (无音区) name list, ordered by F2 book grouping.
-# structure = [len(group) for group in TACET_GROUPS]  -> [2, 5, 5, 7]
-# names (flat) = [name for group in TACET_GROUPS for name in group]  -> 19 items
+# structure = [len(group) for group in TACET_GROUPS]  -> [4, 5, 5, 7]
+# names (flat) = [name for group in TACET_GROUPS for name in group]  -> 21 items
 
 TACET_GROUPS = [
-    # Group 1 — 瑝珑·梦州 (2)
-    ['方擎西峰无音区(秧秧/景燃)', '玄幽东岳无音区(秧秧/清宵)'],
+    # Group 1 — 瑝珑·梦州 (4)
+    ['方擎西峰无音区(秧秧/景燃)', '玄幽东岳无音区(秧秧/清宵)',
+     '心/新奶套无音区(3.7新增)', '心/心的副c无音区(3.7新增)'],
     # Group 2 — 索拉里斯之极·拉海洛 (5)
     ['落日堤屿无音区(绯雪/校长)', '冰原运输港无音区(小爱/西格莉卡)', '加拉尔冠阶无音区(小爱/达妮娅)', '隐喙深腹无音区(医生/琳奈)', '陷足流川无音区(医生/莫宁)'],
     # Group 3 — 黎那汐塔 (5)

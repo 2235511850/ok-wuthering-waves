@@ -32,6 +32,10 @@ class TacetV2Task(TacetTask, BookTargetMixin):
         """名称→序号转换，兼容旧数字配置与 DailyV2Task 传入的 config。"""
         value = config.get('Which Tacet Suppression to Farm', TACET_NAMES[0])
         if not isinstance(value, int):
+            if value not in TACET_NAMES:  # 列表更新后旧配置名失效，回退第一个
+                self.log_info(f'tacet target "{value}" not in list, falling back to {TACET_NAMES[0]}')
+                config['Which Tacet Suppression to Farm'] = TACET_NAMES[0]
+                return config
             config['Which Tacet Suppression to Farm'] = TACET_NAMES.index(value) + 1
             self.log_info(f'TacetV2Task: tacet target "{value}" -> #{TACET_NAMES.index(value) + 1}')
         return config

@@ -83,6 +83,10 @@ class FarmEchoV2Task(FarmEchoTask, BookTargetMixin):
             raise RuntimeError(f'Unknown Teleport to Boss config: {teleport_to_boss}')
 
         boss_name = self.config.get(config_key, boss_names[0])
+        if boss_name not in boss_names:  # 列表更新后旧配置名失效，回退第一个
+            self.log_info(f'teleport target "{boss_name}" not in list, falling back to {boss_names[0]}')
+            self.config[config_key] = boss_names[0]
+            boss_name = boss_names[0]
 
         # For Nightmare Challenge, boss serial number is offset by the nest group
         # (5 nests come before the 10 nightmare bosses in the F2 book)
